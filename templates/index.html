@@ -5,67 +5,215 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI Answer Evaluator</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body class="bg-light">
     <div class="container mt-5">
         <h2 class="mb-4 text-center">AI-Based Answer Evaluator</h2>
-        
-        <div class="row">
-            <div class="col-md-6">
-                <div class="card shadow-sm mb-4">
-                    <div class="card-body">
-                        <form method="POST" action="/">
-                            <div class="mb-3">
-                                <label class="form-label fw-bold">Teacher's Model Answer</label>
-                                <textarea class="form-control" name="teacher_answer" rows="3" required></textarea>
+
+        <ul class="nav nav-tabs mb-4" id="evaluatorTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link {% if active_tab != 'bulk' %}active{% endif %}" id="single-tab" data-bs-toggle="tab" data-bs-target="#single" type="button" role="tab">Single Student</button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link {% if active_tab == 'bulk' %}active{% endif %}" id="bulk-tab" data-bs-toggle="tab" data-bs-target="#bulk" type="button" role="tab">Bulk CSV Upload (Tier 2)</button>
+            </li>
+        </ul>
+
+        <div class="tab-content" id="myTabContent">
+            
+            <div class="tab-pane fade {% if active_tab != 'bulk' %}show active{% endif %}" id="single" role="tabpanel">
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="card shadow-sm mb-4">
+                            <div class="card-body">
+                                <form method="POST" action="/">
+                                    <div class="mb-3">
+                                        <label class="form-label fw-bold">Teacher's Model Answer</label>
+                                        <textarea class="form-control" name="teacher_answer" rows="3" required></textarea>
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label fw-bold">Key Concepts (comma-separated)</label>
+                                        <input type="text" class="form-control" name="concepts" placeholder="e.g. photosynthesis, sunlight, water">
+                                    </div>
+                                    <div class="mb-3">
+                                        <label class="form-label fw-bold">Total Marks</label>
+                                        <input type="number" class="form-control" name="total_marks" value="5" min="1" required>
+                                    </div>
+                                    <hr>
+                                    <div class="mb-3">
+                                        <label class="form-label fw-bold text-primary">Student's Answer</label>
+                                        <textarea class="form-control" name="student_answer" rows="3" required></textarea>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary w-100">Evaluate Answer</button>
+                                </form>
                             </div>
-                            <div class="mb-3">
-                                <label class="form-label fw-bold">Key Concepts (comma-separated)</label>
-                                <input type="text" class="form-control" name="concepts" placeholder="e.g. photosynthesis, sunlight, water">
+                        </div>
+                    </div>
+
+                    <div class="col-md-6">
+                        {% if results %}
+                        <div class="card shadow-sm border-success">
+                            <div class="card-header bg-success text-white fw-bold">Evaluation Results</div>
+                            <div class="card-body">
+                                <h4 class="text-center text-success mb-3">Marks Awarded: {{ "%.1f"|format(results.awarded_marks) }} / {{ results.total_marks }}</h4>
+                                <p><strong>Semantic Match:</strong> {{ results.semantic_similarity }}%</p>
+                                
+                                <p class="mb-1"><strong>Concepts Found ({{ results.concept_score }}%):</strong></p>
+                                <ul class="text-success">
+                                    {% for concept in results.concepts_found %}
+                                        <li>{{ concept }}</li>
+                                    {% else %}
+                                        <li>None found.</li>
+                                    {% endfor %}
+                                </ul>
+
+                                {% if results.missing_concepts %}
+                                <p class="mb-1"><strong>Missing Concepts:</strong></p>
+                                <ul class="text-danger">
+                                    {% for missing in results.missing_concepts %}
+                                        <li>{{ missing }}</li>
+                                    {% endfor %}
+                                </ul>
+                                {% endif %}
+
+                                {% if results.irrelevant_sentences %}
+                                <div class="alert alert-warning mt-3 p-2">
+                                    <strong>⚠️ Irrelevant Sentences Detected:</strong>
+                                    <ul class="mb-0 mt-1" style="font-size: 0.9em;">
+                                        {% for fluff in results.irrelevant_sentences %}
+                                            <li>"{{ fluff }}"</li>
+                                        {% endfor %}
+                                    </ul>
+                                </div>
+                                {% endif %}
                             </div>
-                            <div class="mb-3">
-                                <label class="form-label fw-bold">Total Marks</label>
-                                <input type="number" class="form-control" name="total_marks" value="5" min="1" required>
-                            </div>
-                            <hr>
-                            <div class="mb-3">
-                                <label class="form-label fw-bold text-primary">Student's Answer</label>
-                                <textarea class="form-control" name="student_answer" rows="3" required></textarea>
-                            </div>
-                            <button type="submit" class="btn btn-primary w-100">Evaluate Answer</button>
-                        </form>
+                        </div>
+                        {% else %}
+                        <div class="card shadow-sm">
+                            <div class="card-body text-center text-muted"><p class="mt-3">Submit an answer to see results.</p></div>
+                        </div>
+                        {% endif %}
                     </div>
                 </div>
             </div>
 
-            <div class="col-md-6">
-                {% if results %}
-                <div class="card shadow-sm border-success">
-                    <div class="card-header bg-success text-white fw-bold">
-                        Evaluation Results
+            <div class="tab-pane fade {% if active_tab == 'bulk' %}show active{% endif %}" id="bulk" role="tabpanel">
+                
+                {% if bulk_results %}
+                <div class="card shadow-sm border-primary mb-4">
+                    <div class="card-header bg-primary text-white fw-bold d-flex justify-content-between align-items-center">
+                        <span>Class Insights Dashboard</span>
+                        <a href="/download" class="btn btn-light btn-sm fw-bold text-primary">📥 Download Graded CSV</a>
                     </div>
                     <div class="card-body">
-                        <h4 class="text-center text-success mb-3">Marks Awarded: {{ "%.1f"|format(results.awarded_marks) }} / {{ results.total_marks }}</h4>
+                        <div class="row text-center mb-4 mt-2">
+                            <div class="col-md-6">
+                                <h5 class="text-muted">Total Students Graded</h5>
+                                <h2 class="text-primary fw-bold">{{ bulk_results.total_students }}</h2>
+                            </div>
+                            <div class="col-md-6">
+                                <h5 class="text-muted">Class Average</h5>
+                                <h2 class="text-success fw-bold">{{ bulk_results.average_score }} / {{ bulk_results.total_marks }}</h2>
+                            </div>
+                        </div>
                         
-                        <p><strong>Semantic Match (Meaning):</strong> {{ results.semantic_similarity }}%</p>
-                        
-                        <p><strong>Concepts Found ({{ results.concept_score }}%):</strong></p>
-                        <ul>
-                            {% for concept in results.concepts_found %}
-                                <li>{{ concept }}</li>
-                            {% else %}
-                                <li class="text-danger">No key concepts found.</li>
-                            {% endfor %}
-                        </ul>
+                        <div class="row">
+                            <div class="col-md-6">
+                                <h5 class="text-center">Grade Distribution</h5>
+                                <canvas id="distChart"></canvas>
+                            </div>
+                            <div class="col-md-6">
+                                <h5 class="text-center">Most Missed Concepts</h5>
+                                {% if bulk_results.concept_labels|length > 0 %}
+                                    <canvas id="conceptChart"></canvas>
+                                {% else %}
+                                    <div class="alert alert-success mt-4 text-center">Perfect! No key concepts were missed by the class.</div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="text-center mt-4">
+                            <a href="/" class="btn btn-outline-secondary">Grade Another CSV</a>
+                        </div>
                     </div>
                 </div>
+
+                <script>
+                    // Pass Python variables into JavaScript
+                    const distLabels = {{ bulk_results.dist_labels | tojson }};
+                    const distData = {{ bulk_results.dist_data | tojson }};
+                    
+                    const conceptLabels = {{ bulk_results.concept_labels | tojson }};
+                    const conceptData = {{ bulk_results.concept_data | tojson }};
+
+                    // Draw Grade Distribution (Bar Chart)
+                    new Chart(document.getElementById('distChart'), {
+                        type: 'bar',
+                        data: {
+                            labels: distLabels,
+                            datasets: [{
+                                label: 'Number of Students',
+                                data: distData,
+                                backgroundColor: 'rgba(54, 162, 235, 0.6)',
+                                borderColor: 'rgba(54, 162, 235, 1)',
+                                borderWidth: 1
+                            }]
+                        },
+                        options: { scales: { y: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+                    });
+
+                    // Draw Most Missed Concepts (Horizontal Bar Chart)
+                    if (conceptLabels.length > 0) {
+                        new Chart(document.getElementById('conceptChart'), {
+                            type: 'bar',
+                            data: {
+                                labels: conceptLabels,
+                                datasets: [{
+                                    label: 'Times Missed by Class',
+                                    data: conceptData,
+                                    backgroundColor: 'rgba(255, 99, 132, 0.6)',
+                                    borderColor: 'rgba(255, 99, 132, 1)',
+                                    borderWidth: 1
+                                }]
+                            },
+                            options: { indexAxis: 'y', scales: { x: { beginAtZero: true, ticks: { stepSize: 1 } } } }
+                        });
+                    }
+                </script>
+
                 {% else %}
-                <div class="card shadow-sm">
-                    <div class="card-body text-center text-muted">
-                        <p class="mt-3">Submit an answer to see the evaluation results here.</p>
+                <div class="card shadow-sm mb-4">
+                    <div class="card-body">
+                        <h5 class="card-title text-primary">Grade an Entire Class Instantly</h5>
+                        <p class="text-muted">Upload a CSV file containing columns named <strong>Student_ID</strong> and <strong>Student_Answer</strong>.</p>
+                        
+                        <form method="POST" action="/bulk" enctype="multipart/form-data">
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Teacher's Model Answer</label>
+                                <textarea class="form-control" name="bulk_teacher_answer" rows="2" required></textarea>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-8 mb-3">
+                                    <label class="form-label fw-bold">Key Concepts (comma-separated)</label>
+                                    <input type="text" class="form-control" name="bulk_concepts">
+                                </div>
+                                <div class="col-md-4 mb-3">
+                                    <label class="form-label fw-bold">Total Marks</label>
+                                    <input type="number" class="form-control" name="bulk_total_marks" value="5" min="1" required>
+                                </div>
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label fw-bold">Upload Student CSV</label>
+                                <input type="file" class="form-control" name="csv_file" accept=".csv" required>
+                            </div>
+                            <button type="submit" class="btn btn-success w-100">Upload & Generate Dashboard</button>
+                        </form>
                     </div>
                 </div>
                 {% endif %}
+
             </div>
         </div>
     </div>
